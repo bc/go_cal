@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Calendar Link Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        textarea, input, button {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        #output {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .note {
+            font-style: italic;
+            color: #666;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Google Calendar Link Generator</h1>
+    <div class="note">
+        Note: If no end time is specified, the event will default to 1 hour duration. 
+        If no time is specified at all, it will be created as an all-day event.
+        You can paste text directly onto the page to automatically generate a link.
+    </div>
+    <textarea id="input" rows="5" placeholder="Enter event details here..."></textarea>
+    <button id="generateButton" onclick="generateLink()">Generate Link</button>
+    <h2>Generated Link:</h2>
+    <div id="output"></div>
+
+    <script>
+    function getLocalDateTimeInfo() {
+        const now = new Date();
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        
+        const dayOfWeek = days[now.getDay()];
+        const month = months[now.getMonth()];
+        const date = now.getDate();
+        const year = now.getFullYear();
+        
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        
+        return `Today's date is ${dayOfWeek}, ${month} ${date}, ${year} and the time zone is ${timeZone}. `;
+    }
+
+    function generateGoogleCalendarLink(eventData, rawInput) {
+        function encodeAndReplaceSpaces(str) {
+            return encodeURIComponent(str).replace(/%20/g, '+');
+        }
+
+        const baseUrl = "https://calendar.google.com/calendar/render?action=TEMPLATE";
+        const text = `&text=${encodeAndReplaceSpaces(eventData.title)}`;
+
+        let dates;
+        if (!eventData.dateTime.includes('T')) {
+            // All-day event
+            const endDate = new Date(eventData.dateTime);
+            endDate.setDate(endDate.getDate() + 1);
+            const endDateString = endDate.toISOString().split('T')[0];
+            dates = `&dates=${eventData.dateTime.replace(/-/g, '')}/${endDateString.replace(/-/g, '')}`;
+        } else {
+            // Event with time
+            let endTime = eventData.endTime;
+            if (!endTime) {
+                // Default to 1 hour duration if no end time
+                const startDate = new Date(eventData.dateTime);
+                startDate.setHours(startDate.getHours() + 1);
+                endTime = startDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            } else {
+                endTime = endTime.replace(/[-:]/g, '');
+            }
+            dates = `&dates=${eventData.dateTime.replace(/[-:]/g, '')}/${endTime}`;
+        }
+        
+        // Combine the local date/time info, extracted description, and raw input
+        const localDateTimeInfo = getLocalDateTimeInfo();
+        const combinedDescription = `${localDateTimeInfo}\n\n${eventData.description}\n\nOriginal input:\n${rawInput}`;
+        const details = `&details=${encodeAndReplaceSpaces(combinedDescription)}`;
+        
+        const location = `&location=${encodeAndReplaceSpaces(eventData.location || '')}`;
+        const trp = "&trp=true";
+
+        return `${baseUrl}${text}${dates}${details}${location}${trp}`;
+    }
+
+    function generateLink() {
+        const input = document.getElementById('input').value;
+        const localDateTimeInfo = getLocalDateTimeInfo();
+        const enhancedInput = localDateTimeInfo + input;
+        
+        fetch('/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `input=${encodeURIComponent(enhancedInput)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            const link = generateGoogleCalendarLink(data, input);
+            document.getElementById('output').innerHTML = `<a href="${link}" target="_blank">${link}</a>`;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('output').textContent = 'Error generating link';
+        });
+    }
+
+    function handlePaste(e) {
+        // Prevent the default paste behavior
+        e.preventDefault();
+
+        // Get pasted data via clipboard API
+        var clipboardData = e.clipboardData || window.clipboardData;
+        var pastedData = clipboardData.getData('Text');
+
+        // Set the textarea value to the pasted data
+        document.getElementById('input').value = pastedData;
+
+        // Automatically generate the link
+        generateLink();
+    }
+
+    // Add paste event listener to the document body
+    document.body.addEventListener('paste', handlePaste);
+    </script>
+</body>
+</html>
